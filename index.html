@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVAT-Style Image Annotation Tool</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --panel-bg: #2d2d30;
+            --border-color: #3f3f46;
+            --accent-color: #007acc;
+            --text-color: #d4d4d4;
+            --hover-color: #3e3e42;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        .screen { display: none; width: 100%; height: 100%; }
+        .screen.active { display: flex; }
+
+        /* SETUP SCREEN */
+        #setup-screen { justify-content: center; align-items: center; padding: 20px; }
+        .setup-card { background: var(--panel-bg); border: 1px solid var(--border-color); padding: 30px; border-radius: 8px; width: 750px; max-height: 90vh; overflow-y: auto; }
+        .setup-card h2 { margin-bottom: 20px; color: #fff; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 13px; }
+        .form-group input { width: 100%; padding: 8px; background: var(--bg-color); border: 1px solid var(--border-color); color: #fff; border-radius: 4px; }
+        
+        .btn { background: var(--accent-color); color: white; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 12px; }
+        .btn:hover { opacity: 0.9; }
+        .btn-secondary { background: #555; }
+        .btn-danger { background: #d9534f; }
+
+        .label-builder-box { background: var(--bg-color); border: 1px solid var(--border-color); padding: 12px; margin-bottom: 10px; border-radius: 4px; }
+        .attribute-builder-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+
+        /* WORKSPACE SCREEN */
+        #workspace-screen { flex-direction: column; height: 100vh; position: relative; }
+        .main-layout { display: flex; flex: 1; overflow: hidden; position: relative; }
+
+        .toolbar { width: 60px; background: var(--panel-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; padding-top: 10px; gap: 10px; z-index: 5; }
+        .tool-btn { width: 40px; height: 40px; background: transparent; border: none; color: var(--text-color); cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+        .tool-btn:hover, .tool-btn.active { background: var(--hover-color); color: #fff; }
+
+        .canvas-container { flex: 1; position: relative; overflow: hidden; background: #111; display: flex; justify-content: center; align-items: center; }
+        #main-canvas { position: absolute; left: 0; top: 0; cursor: crosshair; }
+
+        .sidebar { width: 320px; background: var(--panel-bg); border-left: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 15px; overflow-y: auto; z-index: 5; }
+        .sidebar h3 { font-size: 14px; margin-bottom: 10px; color: #fff; }
+
+        .object-item { background: var(--bg-color); padding: 6px 10px; margin-bottom: 6px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .object-item.selected { border-color: var(--accent-color); background: var(--hover-color); }
+        .object-item.multi-selected { border-color: #ffaa00; background: #3a3322; }
+        .object-item.hidden-item { opacity: 0.5; }
+        
+        .visibility-btn { background: none; border: none; cursor: pointer; font-size: 14px; color: #aaa; padding: 2px 4px; border-radius: 3px; }
+        .visibility-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+
+        .top-nav-bar { position: absolute; top: 10px; left: 75px; z-index: 10; background: rgba(45, 45, 48, 0.9); padding: 5px 12px; border-radius: 4px; font-size: 12px; border: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
+
+        /* STOPWATCH & COUNTER STYLES */
+        .nav-widget { display: flex; align-items: center; gap: 6px; background: var(--bg-color); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border-color); }
+        .timer-btn { background: transparent; border: none; color: #fff; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; padding: 2px 4px; border-radius: 3px; }
+        .timer-btn:hover { background: var(--hover-color); }
+
+        .bottom-strip { height: 90px; background: var(--panel-bg); border-top: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 15px; gap: 12px; overflow-x: auto; z-index: 10; }
+        .image-card { min-width: 100px; height: 70px; background: var(--bg-color); border: 2px solid var(--border-color); border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; overflow: hidden; padding: 4px; }
+        .image-card.active { border-color: var(--accent-color); box-shadow: 0 0 8px rgba(0, 122, 204, 0.5); }
+        .image-card img { width: 100%; height: 45px; object-fit: cover; border-radius: 2px; }
+        .image-card span { font-size: 10px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-align: center; }
+
+        /* CONTEXT MENU FOR ATTRIBUTES */
+        #context-menu { display: none; position: absolute; z-index: 1000; background: var(--panel-bg); border: 1px solid var(--border-color); width: 300px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 12px; font-size: 12px; max-height: 450px; overflow-y: auto; }
+        .context-menu-header { font-weight: bold; font-size: 13px; margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; }
+
+        .dropdown-container { position: relative; margin-bottom: 8px; }
+        .dropdown-btn { width: 100%; background: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-color); padding: 6px 10px; text-align: left; border-radius: 4px; cursor: pointer; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
+        .dropdown-content { display: none; position: absolute; top: 100%; left: 0; width: 100%; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; max-height: 180px; overflow-y: auto; z-index: 1010; padding: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        .dropdown-content.show { display: block; }
+        .dropdown-content label { display: flex; align-items: center; gap: 6px; padding: 4px; cursor: pointer; font-size: 11px; }
+        .dropdown-content label:hover { background: var(--hover-color); }
+    </style>
+</head>
+<body>
+
+    <!-- SCREEN 1: PROJECT SETUP -->
+    <div id="setup-screen" class="screen active">
+        <div class="setup-card">
+            <h2>Create Multi-Image Annotation Project</h2>
+            <div class="form-group">
+                <label>Project Name</label>
+                <input type="text" id="proj-name" value="Multi-Image Dataset">
+            </div>
+            <div class="form-group">
+                <label>Upload Workspace Images</label>
+                <input type="file" id="proj-images" accept="image/*" multiple>
+            </div>
+            <div class="form-group">
+                <label>Configure Labels, Attributes & Tags</label>
+                <div id="labels-builder-container"></div>
+                <button class="btn btn-secondary" onclick="addNewLabel()" style="margin-top: 5px;">+ Add New Label</button>
+            </div>
+            <button class="btn" onclick="saveAndStartProject()" style="width: 100%; margin-top: 15px; padding: 12px;">Save & Start Annotating</button>
+        </div>
+    </div>
+
+    <!-- SCREEN 2: ANNOTATION WORKSPACE -->
+    <div id="workspace-screen" class="screen">
+        <div class="top-nav-bar">
+            <span id="display-proj-name">Project</span>
+            |
+            <!-- STOPWATCH WIDGET -->
+            <div class="nav-widget">
+                <span>⏱️</span>
+                <span id="stopwatch-display" style="font-family: monospace; font-size: 13px; font-weight: bold;">00:00:00</span>
+                <button id="btn-toggle-timer" class="timer-btn" title="Pause / Resume Timer" onclick="toggleTimer()">⏸️</button>
+            </div>
+            |
+            <!-- BOUNDING BOX COUNTER WIDGET -->
+            <div class="nav-widget">
+                <span>🔲</span>
+                <span style="font-weight: bold;">Boxes: <span id="box-count-display">0</span> (Total: <span id="box-total-display">0</span>)</span>
+            </div>
+            | 
+            <button onclick="goToSetup()" style="background:none; border:none; color:var(--accent-color); cursor:pointer;">⚙ Edit Config Schema</button>
+        </div>
+
+        <div class="main-layout">
+            <div class="toolbar">
+                <button class="tool-btn active" id="btn-box-tool" title="Box Mode (X)" onclick="setTool('box')">🔲</button>
+                <button class="tool-btn" id="btn-pan-tool" title="Move / Pan (M)" onclick="setTool('pan')">🖐</button>
+                <button class="tool-btn" title="Undo (Ctrl+Z)" onclick="undoAction()">↩️</button>
+                <button class="tool-btn" title="Zoom In (+)" onclick="zoomCanvasAtCenter(1.2)">🔍+</button>
+                <button class="tool-btn" title="Zoom Out (-)" onclick="zoomCanvasAtCenter(0.8)">🔍-</button>
+                <button class="tool-btn" title="Group Selected Boxes (G)" onclick="groupSelectedBoxes()">🔗</button>
+                <button class="tool-btn" title="Delete Box (Del)" onclick="deleteSelectedShape()">🗑</button>
+            </div>
+
+            <div class="canvas-container" id="canvas-container">
+                <canvas id="main-canvas"></canvas>
+            </div>
+
+            <div class="sidebar">
+                <h3>Objects List (Ctrl+Click to multi-select)</h3>
+                <ul id="object-list" style="list-style:none;"></ul>
+            </div>
+        </div>
+
+        <div class="bottom-strip" id="bottom-image-strip"></div>
+    </div>
+
+    <!-- RIGHT CLICK CONTEXT MENU -->
+    <div id="context-menu">
+        <div class="context-menu-header">
+            <span id="ctx-title">Edit Attributes</span>
+            <span style="cursor:pointer; color:#aaa;" onclick="closeContextMenu()">✕</span>
+        </div>
+        <div id="ctx-label-selector" style="margin-bottom: 8px;">
+            <label style="display:block; font-weight:bold; margin-bottom:3px;">Object Label:</label>
+            <select id="ctx-label-dropdown" onchange="changeShapeLabel(this.value)" style="width:100%; padding:4px; background:var(--bg-color); color:#fff; border:1px solid var(--border-color); border-radius:4px;"></select>
+        </div>
+        <div id="ctx-attributes-body"></div>
+    </div>
+
+    <script>
+        let projectConfig = {
+            name: "Multi-Image Dataset",
+            labels: [
+                {
+                    name: "HUMAN BODY",
+                    color: "#ff0055",
+                    attributes: [
+                        { name: "Occlusion", tags: ["NONE", "PARTIAL", "FULL"] },
+                        { name: "Carrying", tags: ["Backpack", "Child", "Closed Umbrella", "Gun", "Luggage", "NeckScarf", "OpenUmbrella", "Purse", "Shopping Bag", "ShoulderBag", "Suitcase", "None", "Other", "OtherBag", "Unclear", "NotVisible"] },
+                        { name: "Gender", tags: ["Male", "Female", "Unclear", "NotVisible"] },
+                        { name: "Age Range", tags: ["0-3", "4-10", "11-18", "19-40", "41-60", ">60", "Unclear", "NotVisible"] },
+                        { name: "ClothesUpper BodyColor", tags: ["Beige", "Black", "Brown", "DarkBlue", "Green", "Grey", "Lightblue", "Orange", "Pink", "Purple", "Red", "White", "Yellow", "Other", "Unclear", "NotVisible", "NotApplicable"] },
+                        { name: "ClothesLower BodyColor", tags: ["Beige", "Black", "Brown", "DarkBlue", "Green", "Grey", "Lightblue", "Orange", "Pink", "Purple", "Red", "White", "Yellow", "Other", "Unclear", "NotVisible", "NotApplicable"] },
+                        { name: "Posture", tags: ["Upright", "Squatting", "Sitting", "Kneeling", "Lying", "Unclear"] },
+                        { name: "Relation", tags: ["Carried", "Carrying", "Not Carried/Carrying"] }
+                    ]
+                },
+                {
+                    name: "HUMAN HEAD",
+                    color: "#00ccff",
+                    attributes: [
+                        { name: "Occlusion", tags: ["NONE", "PARTIAL", "FULL"] }
+                    ]
+                },
+                {
+                    name: "HUMAN FACE",
+                    color: "#00ffaa",
+                    attributes: [
+                        { name: "Face Quality", tags: ["0", "1", "2", "3"] },
+                        { name: "Occlusion", tags: ["NONE", "PARTIAL", "FULL"] }
+                    ]
+                },
+                {
+                    name: "WEAPON",
+                    color: "#ff3300",
+                    attributes: [
+                        { name: "Type", tags: ["LONG_GUN", "SHORT_GUN"] },
+                        { name: "Occlusion", tags: ["NONE", "PARTIAL", "FULL"] },
+                        { name: "WeaponPosition", tags: ["Handheld", "OnPerson", "Standalone"] }
+                    ]
+                },
+                {
+                    name: "VEHICLE",
+                    color: "#ffaa00",
+                    attributes: [
+                        { name: "Type", tags: ["BICYCLE", "BOAT", "BUS", "CONSTRUCTION_VEHICLE", "FORKLIFT", "MOTORCYCLE", "PICKUP TRUCK", "SEDAN", "SUV", "TRAILER_TRUCK", "TRUCK", "VAN", "OTHER", "UNKNOWN"] },
+                        { name: "Occlusion", tags: ["NONE", "PARTIAL", "FULL"] },
+                        { name: "Pose", tags: ["Front", "Back", "Left", "Right", "Top"] },
+                        { name: "Color", tags: ["Black", "Blue", "Brown", "Gold", "Green", "Grey", "Orange", "Pink", "Purple", "Red", "Silver", "Unclear", "White"] },
+                        { name: "Relation", tags: ["Carried", "Carrying", "Not Carried/Carrying"] }
+                    ]
+                },
+                {
+                    name: "LICENSE_PLATE",
+                    color: "#cc00ff",
+                    attributes: [
+                        { name: "Occlusion", tags: ["NONE", "PARTIAL", "FULL"] }
+                    ]
+                }
+            ]
+        };
+
+        let appState = {
+            images: [],
+            currentImageIndex: 0,
+            shapesMap: {},
+            historyStack: {},
+            selectedShapeId: null,
+            multiSelectedIds: new Set(),
+            currentTool: 'box',
+            scale: 1,
+            panX: 0, panY: 0,
+            isDrawing: false,
+            isPanning: false,
+            isResizing: false,
+            isMoving: false,
+            resizeHandle: null,
+            startX: 0, startY: 0, currentX: 0, currentY: 0,
+            moveOffsetX: 0, moveOffsetY: 0,
+            panStartX: 0, panStartY: 0,
+            groupCounter: 1
+        };
+
+        // STOPWATCH SYSTEM STATE
+        let timerState = {
+            seconds: 0,
+            interval: null,
+            isRunning: false,
+            hasStarted: false
+        };
+
+        function startTimer() {
+            if (timerState.isRunning) return;
+            timerState.isRunning = true;
+            timerState.hasStarted = true;
+            document.getElementById('btn-toggle-timer').innerText = '⏸️';
+            timerState.interval = setInterval(() => {
+                timerState.seconds++;
+                updateTimerDisplay();
+            }, 1000);
+        }
+
+        function pauseTimer() {
+            if (!timerState.isRunning) return;
+            timerState.isRunning = false;
+            clearInterval(timerState.interval);
+            document.getElementById('btn-toggle-timer').innerText = '▶️';
+        }
+
+        function toggleTimer() {
+            if (timerState.isRunning) {
+                pauseTimer();
+            } else {
+                startTimer();
+            }
+        }
+
+        function resetTimer() {
+            pauseTimer();
+            timerState.seconds = 0;
+            timerState.hasStarted = false;
+            updateTimerDisplay();
+        }
+
+        function updateTimerDisplay() {
+            const hrs = String(Math.floor(timerState.seconds / 3600)).padStart(2, '0');
+            const mins = String(Math.floor((timerState.seconds % 3600) / 60)).padStart(2, '0');
+            const secs = String(timerState.seconds % 60).padStart(2, '0');
+            document.getElementById('stopwatch-display').innerText = `${hrs}:${mins}:${secs}`;
+        }
+
+        // BOUNDING BOX COUNTER SYSTEM
+        function updateBoxCounter() {
+            const currentShapes = appState.shapesMap[appState.currentImageIndex] || [];
+            const currentCount = currentShapes.length;
+
+            let totalCount = 0;
+            for (let idx in appState.shapesMap) {
+                totalCount += appState.shapesMap[idx].length;
+            }
+
+            document.getElementById('box-count-display').innerText = currentCount;
+            document.getElementById('box-total-display').innerText = totalCount;
+        }
+
+        function renderLabelBuilder() {
+            const container = document.getElementById('labels-builder-container');
+            container.innerHTML = '';
+            projectConfig.labels.forEach((lbl, lIdx) => {
+                let attrHTML = '';
+                lbl.attributes.forEach((attr, aIdx) => {
+                    attrHTML += `
+                        <div class="attribute-builder-row">
+                            <input type="text" value="${attr.name}" placeholder="Attribute Name" onchange="updateAttrName(${lIdx}, ${aIdx}, this.value)" style="flex:1;">
+                            <input type="text" value="${attr.tags.join(', ')}" placeholder="Tags (Comma-separated)" onchange="updateAttrTags(${lIdx}, ${aIdx}, this.value)" style="flex:2;">
+                            <button class="btn btn-danger" style="padding:4px 8px;" onclick="removeAttr(${lIdx}, ${aIdx})">✕</button>
+                        </div>
+                    `;
+                });
+                container.innerHTML += `
+                    <div class="label-builder-box">
+                        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
+                            <input type="text" value="${lbl.name}" placeholder="Label Name" onchange="updateLabelName(${lIdx}, this.value)" style="flex:2;">
+                            <input type="color" value="${lbl.color}" onchange="updateLabelColor(${lIdx}, this.value)" style="width:40px; height:30px; border:none; background:none; cursor:pointer;">
+                            <button class="btn btn-danger" onclick="removeLabel(${lIdx})">Delete</button>
+                        </div>
+                        <div style="margin-left: 10px; border-left: 2px solid var(--border-color); padding-left: 10px;">
+                            <label style="font-size:11px; color:#aaa; margin-bottom:4px;">Attributes:</label>
+                            ${attrHTML}
+                            <button class="btn btn-secondary" style="margin-top:6px; font-size:11px;" onclick="addAttribute(${lIdx})">+ Add Attribute</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function addNewLabel() { projectConfig.labels.push({ name: "NEW LABEL", color: "#" + Math.floor(Math.random()*16777215).toString(16), attributes: [] }); renderLabelBuilder(); }
+        function removeLabel(lIdx) { projectConfig.labels.splice(lIdx, 1); renderLabelBuilder(); }
+        function updateLabelName(lIdx, val) { projectConfig.labels[lIdx].name = val; }
+        function updateLabelColor(lIdx, val) { projectConfig.labels[lIdx].color = val; }
+        function addAttribute(lIdx) { projectConfig.labels[lIdx].attributes.push({ name: "New Attr", tags: ["Tag A", "Tag B"] }); renderLabelBuilder(); }
+        function removeAttr(lIdx, aIdx) { projectConfig.labels[lIdx].attributes.splice(aIdx, 1); renderLabelBuilder(); }
+        function updateAttrName(lIdx, aIdx, val) { projectConfig.labels[lIdx].attributes[aIdx].name = val; }
+        function updateAttrTags(lIdx, aIdx, val) { projectConfig.labels[lIdx].attributes[aIdx].tags = val.split(',').map(t => t.trim()).filter(t => t.length > 0); }
+
+        function saveAndStartProject() {
+            projectConfig.name = document.getElementById('proj-name').value;
+            const fileInput = document.getElementById('proj-images');
+            appState.images = []; appState.shapesMap = {}; appState.historyStack = {}; appState.currentImageIndex = 0;
+            resetTimer();
+
+            if (fileInput.files && fileInput.files.length > 0) {
+                let loadedCount = 0;
+                Array.from(fileInput.files).forEach((file, index) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const img = new Image();
+                        img.onload = function() {
+                            appState.images.push({ id: index, name: file.name, src: e.target.result, imgObj: img });
+                            appState.shapesMap[index] = [];
+                            appState.historyStack[index] = [];
+                            loadedCount++;
+                            if (loadedCount === fileInput.files.length) initWorkspace();
+                        };
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            } else {
+                const placeholderSrc = generatePlaceholderImage();
+                const img = new Image();
+                img.onload = function() {
+                    appState.images.push({ id: 0, name: "Sample_Workspace.jpg", src: placeholderSrc, imgObj: img });
+                    appState.shapesMap[0] = [];
+                    appState.historyStack[0] = [];
+                    initWorkspace();
+                };
+                img.src = placeholderSrc;
+            }
+        }
+
+        function generatePlaceholderImage() {
+            const c = document.createElement('canvas'); c.width = 900; c.height = 600;
+            const cx = c.getContext('2d'); cx.fillStyle = '#222'; cx.fillRect(0, 0, 900, 600);
+            cx.fillStyle = '#fff'; cx.font = '20px Arial'; cx.fillText('Placeholder Image (Upload images in setup screen)', 200, 300);
+            return c.toDataURL();
+        }
+
+        function initWorkspace() {
+            switchScreen('workspace-screen');
+            document.getElementById('display-proj-name').innerText = projectConfig.name;
+            renderBottomThumbnailStrip();
+            setupCanvasSize();
+            resetViewFit();
+            updateBoxCounter();
+        }
+
+        function switchScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        function goToSetup() { closeContextMenu(); switchScreen('setup-screen'); renderLabelBuilder(); }
+
+        function renderBottomThumbnailStrip() {
+            const strip = document.getElementById('bottom-image-strip');
+            strip.innerHTML = '';
+            appState.images.forEach((imgItem, idx) => {
+                const card = document.createElement('div');
+                card.className = `image-card ${idx === appState.currentImageIndex ? 'active' : ''}`;
+                card.onclick = () => switchActiveImage(idx);
+                card.innerHTML = `<img src="${imgItem.src}"><span>${imgItem.name}</span>`;
+                strip.appendChild(card);
+            });
+        }
+
+        function switchActiveImage(index) {
+            appState.currentImageIndex = index;
+            appState.selectedShapeId = null;
+            appState.multiSelectedIds.clear();
+            closeContextMenu();
+            renderBottomThumbnailStrip();
+            resetViewFit();
+            updateObjectList();
+            updateBoxCounter();
+            drawCanvas();
+        }
+
+        function saveState() {
+            const idx = appState.currentImageIndex;
+            if (!appState.historyStack[idx]) appState.historyStack[idx] = [];
+            appState.historyStack[idx].push(JSON.stringify(appState.shapesMap[idx]));
+        }
+
+        function undoAction() {
+            const idx = appState.currentImageIndex;
+            if (appState.historyStack[idx] && appState.historyStack[idx].length > 0) {
+                const previousState = appState.historyStack[idx].pop();
+                appState.shapesMap[idx] = JSON.parse(previousState);
+                appState.selectedShapeId = null;
+                appState.multiSelectedIds.clear();
+                updateObjectList();
+                updateBoxCounter();
+                drawCanvas();
+            }
+        }
+
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        function setupCanvasSize() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            drawCanvas();
+        }
+        window.addEventListener('resize', () => { if (document.getElementById('workspace-screen').classList.contains('active')) setupCanvasSize(); });
+
+        function resetViewFit() {
+            const currentImg = appState.images[appState.currentImageIndex];
+            if (!currentImg || !currentImg.imgObj) return;
+            appState.scale = Math.min(container.clientWidth / currentImg.imgObj.width, container.clientHeight / currentImg.imgObj.height) * 0.85;
+            appState.panX = 0; appState.panY = 0;
+            drawCanvas();
+        }
+
+        function zoomCanvasAtCenter(factor) { appState.scale *= factor; drawCanvas(); }
+
+        function setTool(toolName) {
+            appState.currentTool = toolName;
+            document.getElementById('btn-box-tool').classList.toggle('active', toolName === 'box');
+            document.getElementById('btn-pan-tool').classList.toggle('active', toolName === 'pan');
+            canvas.style.cursor = toolName === 'pan' ? 'grab' : 'crosshair';
+        }
+
+        function screenToImageCoords(screenX, screenY) {
+            const currentImg = appState.images[appState.currentImageIndex];
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: (screenX - rect.left - (canvas.width / 2) - appState.panX) / appState.scale + (currentImg.imgObj.width / 2),
+                y: (screenY - rect.top - (canvas.height / 2) - appState.panY) / appState.scale + (currentImg.imgObj.height / 2)
+            };
+        }
+
+        function getResizeHandles(shape) {
+            const hSize = 8 / appState.scale;
+            return {
+                nw: { x: shape.x - hSize/2, y: shape.y - hSize/2, size: hSize },
+                ne: { x: shape.x + shape.width - hSize/2, y: shape.y - hSize/2, size: hSize },
+                se: { x: shape.x + shape.width - hSize/2, y: shape.y + shape.height - hSize/2, size: hSize },
+                sw: { x: shape.x - hSize/2, y: shape.y + shape.height - hSize/2, size: hSize }
+            };
+        }
+
+        function drawCanvas() {
+            const currentImg = appState.images[appState.currentImageIndex];
+            if (!currentImg || !currentImg.imgObj) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(canvas.width / 2 + appState.panX, canvas.height / 2 + appState.panY);
+            ctx.scale(appState.scale, appState.scale);
+            ctx.translate(-currentImg.imgObj.width / 2, -currentImg.imgObj.height / 2);
+
+            ctx.drawImage(currentImg.imgObj, 0, 0);
+
+            const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+            shapes.forEach(shape => {
+                if (shape.hidden) return;
+
+                const labelDef = projectConfig.labels[shape.labelIndex] || projectConfig.labels[0];
+                const isSelected = shape.id === appState.selectedShapeId;
+                const isMultiSelected = appState.multiSelectedIds.has(shape.id);
+
+                ctx.strokeStyle = isMultiSelected ? '#ffaa00' : labelDef.color;
+                ctx.lineWidth = (isSelected || isMultiSelected ? 2.5 : 1.5) / appState.scale;
+                
+                if (isMultiSelected) {
+                    ctx.setLineDash([6 / appState.scale, 3 / appState.scale]);
+                } else {
+                    ctx.setLineDash([]);
+                }
+
+                ctx.beginPath();
+                ctx.rect(shape.x, shape.y, shape.width, shape.height);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                if (isSelected) {
+                    const handles = getResizeHandles(shape);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.strokeStyle = labelDef.color;
+                    ctx.lineWidth = 1 / appState.scale;
+                    for (let key in handles) {
+                        const h = handles[key];
+                        ctx.fillRect(h.x, h.y, h.size, h.size);
+                        ctx.strokeRect(h.x, h.y, h.size, h.size);
+                    }
+                }
+
+                ctx.fillStyle = isMultiSelected ? '#ffaa00' : labelDef.color;
+                ctx.font = `bold ${12 / appState.scale}px Arial`;
+                let text = labelDef.name;
+                if (shape.groupId) text += ` [${shape.groupId}]`;
+                
+                let tagList = [];
+                for(let k in shape.attributes) { if(shape.attributes[k] && shape.attributes[k].length > 0) tagList.push(...shape.attributes[k]); }
+                if(tagList.length > 0) text += `: ${tagList.join(',')}`;
+
+                ctx.fillText(text, shape.x, shape.y > 15 ? shape.y - 5 : shape.y + 15);
+            });
+
+            if (appState.isDrawing && appState.currentTool === 'box') {
+                const start = screenToImageCoords(appState.startX, appState.startY);
+                const curr = screenToImageCoords(appState.currentX, appState.currentY);
+                ctx.strokeStyle = '#00d2ff';
+                ctx.lineWidth = 1.5 / appState.scale;
+                ctx.strokeRect(Math.min(start.x, curr.x), Math.min(start.y, curr.y), Math.abs(curr.x - start.x), Math.abs(curr.y - start.y));
+            }
+
+            ctx.restore();
+        }
+
+        // --- MOUSE DOWN LOGIC INCLUDING CTRL+CLICK MULTI-SELECTION ---
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            closeContextMenu();
+
+            const pos = screenToImageCoords(e.clientX, e.clientY);
+
+            if (appState.currentTool === 'pan') {
+                appState.isPanning = true;
+                appState.panStartX = e.clientX - appState.panX;
+                appState.panStartY = e.clientY - appState.panY;
+                canvas.style.cursor = 'grabbing';
+                return;
+            }
+
+            // Handles multi-selection via Ctrl or Cmd key on Canvas Click
+            if (e.ctrlKey || e.metaKey) {
+                const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+                let hitShape = null;
+                for (let i = shapes.length - 1; i >= 0; i--) {
+                    let s = shapes[i];
+                    if (!s.hidden && pos.x >= s.x && pos.x <= s.x + s.width && pos.y >= s.y && pos.y <= s.y + s.height) {
+                        hitShape = s;
+                        break;
+                    }
+                }
+
+                if (hitShape) {
+                    if (appState.multiSelectedIds.has(hitShape.id)) {
+                        appState.multiSelectedIds.delete(hitShape.id);
+                    } else {
+                        appState.multiSelectedIds.add(hitShape.id);
+                        if (appState.selectedShapeId) {
+                            appState.multiSelectedIds.add(appState.selectedShapeId);
+                            appState.selectedShapeId = null;
+                        }
+                    }
+                    updateObjectList();
+                    drawCanvas();
+                    return;
+                }
+            }
+
+            // 1. Check for handle resize on single active shape
+            if (appState.selectedShapeId) {
+                const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+                const activeShape = shapes.find(s => s.id === appState.selectedShapeId && !s.hidden);
+                if (activeShape) {
+                    const handles = getResizeHandles(activeShape);
+                    for (let key in handles) {
+                        const h = handles[key];
+                        if (pos.x >= h.x && pos.x <= h.x + h.size && pos.y >= h.y && pos.y <= h.y + h.size) {
+                            saveState();
+                            appState.isResizing = true;
+                            appState.resizeHandle = key;
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // 2. Draw new box in Box tool mode when Ctrl is not pressed
+            if (appState.currentTool === 'box') {
+                // START STOPWATCH ON FIRST DRAWING
+                if (!timerState.hasStarted) {
+                    startTimer();
+                }
+
+                appState.selectedShapeId = null;
+                appState.multiSelectedIds.clear();
+                appState.isDrawing = true;
+                appState.startX = e.clientX; 
+                appState.startY = e.clientY;
+                appState.currentX = e.clientX; 
+                appState.currentY = e.clientY;
+                updateObjectList();
+                drawCanvas();
+                return;
+            }
+
+            // 3. Fallback hit check for single select or moving boxes
+            const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+            let hitShape = null;
+            for (let i = shapes.length - 1; i >= 0; i--) {
+                let s = shapes[i];
+                if (!s.hidden && pos.x >= s.x && pos.x <= s.x + s.width && pos.y >= s.y && pos.y <= s.y + s.height) {
+                    hitShape = s;
+                    break;
+                }
+            }
+
+            if (hitShape) {
+                appState.selectedShapeId = hitShape.id;
+                appState.multiSelectedIds.clear();
+                appState.isMoving = true;
+                appState.moveOffsetX = pos.x - hitShape.x;
+                appState.moveOffsetY = pos.y - hitShape.y;
+                updateObjectList();
+                drawCanvas();
+            } else {
+                appState.selectedShapeId = null;
+                appState.multiSelectedIds.clear();
+                updateObjectList();
+                drawCanvas();
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (appState.isPanning) {
+                appState.panX = e.clientX - appState.panStartX;
+                appState.panY = e.clientY - appState.panStartY;
+                drawCanvas();
+            } else if (appState.isDrawing) {
+                appState.currentX = e.clientX; appState.currentY = e.clientY;
+                drawCanvas();
+            } else if (appState.isMoving && appState.selectedShapeId) {
+                const pos = screenToImageCoords(e.clientX, e.clientY);
+                const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+                const shape = shapes.find(s => s.id === appState.selectedShapeId);
+                if (shape) {
+                    shape.x = pos.x - appState.moveOffsetX;
+                    shape.y = pos.y - appState.moveOffsetY;
+                    drawCanvas();
+                }
+            } else if (appState.isResizing && appState.selectedShapeId) {
+                const pos = screenToImageCoords(e.clientX, e.clientY);
+                const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+                const shape = shapes.find(s => s.id === appState.selectedShapeId);
+                if (shape) {
+                    if (appState.resizeHandle === 'se') {
+                        shape.width = Math.max(5, pos.x - shape.x);
+                        shape.height = Math.max(5, pos.y - shape.y);
+                    } else if (appState.resizeHandle === 'sw') {
+                        const oldX2 = shape.x + shape.width;
+                        shape.x = Math.min(pos.x, oldX2 - 5);
+                        shape.width = oldX2 - shape.x;
+                        shape.height = Math.max(5, pos.y - shape.y);
+                    } else if (appState.resizeHandle === 'ne') {
+                        const oldY2 = shape.y + shape.height;
+                        shape.width = Math.max(5, pos.x - shape.x);
+                        shape.y = Math.min(pos.y, oldY2 - 5);
+                        shape.height = oldY2 - shape.y;
+                    } else if (appState.resizeHandle === 'nw') {
+                        const oldX2 = shape.x + shape.width;
+                        const oldY2 = shape.y + shape.height;
+                        shape.x = Math.min(pos.x, oldX2 - 5);
+                        shape.y = Math.min(pos.y, oldY2 - 5);
+                        shape.width = oldX2 - shape.x;
+                        shape.height = oldY2 - shape.y;
+                    }
+                    drawCanvas();
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (appState.isPanning) {
+                appState.isPanning = false;
+                canvas.style.cursor = appState.currentTool === 'pan' ? 'grab' : 'crosshair';
+            }
+            if (appState.isResizing) {
+                appState.isResizing = false;
+                appState.resizeHandle = null;
+            }
+            if (appState.isMoving) {
+                appState.isMoving = false;
+            }
+            if (appState.isDrawing) {
+                appState.isDrawing = false;
+                const start = screenToImageCoords(appState.startX, appState.startY);
+                const end = screenToImageCoords(e.clientX, e.clientY);
+                const w = Math.abs(end.x - start.x);
+                const h = Math.abs(end.y - start.y);
+
+                if (w > 5 && h > 5) {
+                    saveState();
+                    const newShape = {
+                        id: 'shape_' + Date.now(),
+                        labelIndex: 0,
+                        x: Math.min(start.x, end.x),
+                        y: Math.min(start.y, end.y),
+                        width: w,
+                        height: h,
+                        attributes: {},
+                        groupId: null,
+                        hidden: false
+                    };
+
+                    if (!appState.shapesMap[appState.currentImageIndex]) appState.shapesMap[appState.currentImageIndex] = [];
+                    appState.shapesMap[appState.currentImageIndex].push(newShape);
+                    appState.selectedShapeId = newShape.id;
+                    updateObjectList();
+                    updateBoxCounter();
+                }
+                drawCanvas();
+            }
+        });
+
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+            const pos = screenToImageCoords(e.clientX, e.clientY);
+            let foundShape = null;
+
+            for (let i = shapes.length - 1; i >= 0; i--) {
+                let s = shapes[i];
+                if (!s.hidden && pos.x >= s.x && pos.x <= s.x + s.width && pos.y >= s.y && pos.y <= s.y + s.height) {
+                    foundShape = s;
+                    break;
+                }
+            }
+
+            if (foundShape) {
+                appState.selectedShapeId = foundShape.id;
+                updateObjectList();
+                drawCanvas();
+                openContextMenu(e.clientX, e.clientY, foundShape);
+            } else {
+                closeContextMenu();
+            }
+        });
+
+        function openContextMenu(mouseX, mouseY, shape) {
+            const menu = document.getElementById('context-menu');
+            const dropdown = document.getElementById('ctx-label-dropdown');
+
+            dropdown.innerHTML = '';
+            projectConfig.labels.forEach((l, idx) => {
+                dropdown.innerHTML += `<option value="${idx}" ${shape.labelIndex === idx ? 'selected' : ''}>${l.name}</option>`;
+            });
+
+            renderContextMenuAttributes(shape);
+
+            menu.style.display = 'block';
+            menu.style.left = Math.min(mouseX, window.innerWidth - 320) + 'px';
+            menu.style.top = Math.min(mouseY, window.innerHeight - 450) + 'px';
+        }
+
+        function renderContextMenuAttributes(shape) {
+            const body = document.getElementById('ctx-attributes-body');
+            const labelDef = projectConfig.labels[shape.labelIndex];
+
+            let html = '';
+            if (!labelDef || !labelDef.attributes || labelDef.attributes.length === 0) {
+                html = `<p style="color:#aaa; padding:5px;">No attributes configured for this label.</p>`;
+            } else {
+                labelDef.attributes.forEach(attr => {
+                    const selectedTags = shape.attributes[attr.name] || [];
+                    const summaryText = selectedTags.length > 0 ? selectedTags.join(', ') : 'Select tags...';
+
+                    html += `
+                        <div style="margin-bottom: 8px;">
+                            <label style="display:block; font-weight:bold; margin-bottom:3px;">${attr.name}</label>
+                            <div class="dropdown-container">
+                                <button type="button" class="dropdown-btn" onclick="toggleDropdown(event, this)">
+                                    <span>${summaryText}</span>
+                                    <span>▼</span>
+                                </button>
+                                <div class="dropdown-content">
+                    `;
+
+                    attr.tags.forEach(tag => {
+                        const isChecked = selectedTags.includes(tag);
+                        html += `
+                            <label onclick="event.stopPropagation()">
+                                <input type="checkbox" 
+                                    onchange="handleTagToggle('${shape.id}', '${attr.name}', '${tag}', this)"
+                                    ${isChecked ? 'checked' : ''}>
+                                ${tag}
+                            </label>
+                        `;
+                    });
+
+                    html += `</div></div></div>`;
+                });
+            }
+            body.innerHTML = html;
+        }
+
+        function changeShapeLabel(newLabelIdx) {
+            if (!appState.selectedShapeId) return;
+            saveState();
+            const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+            const shape = shapes.find(s => s.id === appState.selectedShapeId);
+            if (shape) {
+                shape.labelIndex = parseInt(newLabelIdx);
+                shape.attributes = {};
+                renderContextMenuAttributes(shape);
+                updateObjectList();
+                drawCanvas();
+            }
+            closeContextMenu();
+        }
+
+        function closeContextMenu() { 
+            document.getElementById('context-menu').style.display = 'none'; 
+            document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+        }
+
+        function toggleDropdown(e, btn) {
+            e.stopPropagation();
+            const content = btn.nextElementSibling;
+            const isOpen = content.classList.contains('show');
+            document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+            if (!isOpen) content.classList.add('show');
+        }
+
+        window.addEventListener('click', (e) => { 
+            if (!e.target.closest('.dropdown-container')) {
+                document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+            }
+        });
+
+        function handleTagToggle(shapeId, attrName, tagValue, checkboxElem) {
+            saveState();
+            const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+            const shape = shapes.find(s => s.id === shapeId);
+            if (!shape) return;
+
+            if (!shape.attributes[attrName]) shape.attributes[attrName] = [];
+
+            if (checkboxElem.checked) {
+                if (!shape.attributes[attrName].includes(tagValue)) shape.attributes[attrName].push(tagValue);
+            } else {
+                shape.attributes[attrName] = shape.attributes[attrName].filter(t => t !== tagValue);
+            }
+
+            const dropdownBtn = checkboxElem.closest('.dropdown-container').querySelector('.dropdown-btn span:first-child');
+            const currentSelected = shape.attributes[attrName];
+            dropdownBtn.innerText = currentSelected.length > 0 ? currentSelected.join(', ') : 'Select tags...';
+            drawCanvas();
+        }
+
+        function updateObjectList() {
+            const list = document.getElementById('object-list');
+            list.innerHTML = '';
+            const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+            shapes.forEach((s, idx) => {
+                const lbl = projectConfig.labels[s.labelIndex] || projectConfig.labels[0];
+                const isChecked = appState.multiSelectedIds.has(s.id);
+                const li = document.createElement('li');
+                li.className = `object-item ${s.id === appState.selectedShapeId ? 'selected' : ''} ${isChecked ? 'multi-selected' : ''} ${s.hidden ? 'hidden-item' : ''}`;
+                li.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:8px; width:80%;" onclick="selectShapeFromList('${s.id}', event)">
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="toggleMultiSelect(event, '${s.id}')">
+                        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">#${idx+1} - ${lbl.name} ${s.groupId ? '('+s.groupId+')' : ''}</span>
+                    </div>
+                    <button class="visibility-btn" title="${s.hidden ? 'Show Box' : 'Hide Box'}" onclick="toggleShapeVisibility(event, '${s.id}')">
+                        ${s.hidden ? '🙈' : '👁️'}
+                    </button>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        function toggleShapeVisibility(e, id) {
+            e.stopPropagation();
+            const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+            const shape = shapes.find(s => s.id === id);
+            if (shape) {
+                shape.hidden = !shape.hidden;
+                if (shape.hidden && appState.selectedShapeId === id) {
+                    appState.selectedShapeId = null;
+                }
+                updateObjectList();
+                drawCanvas();
+            }
+        }
+
+        function selectShapeFromList(id, e) {
+            if (e && (e.ctrlKey || e.metaKey)) {
+                toggleMultiSelect(e, id);
+                return;
+            }
+            appState.selectedShapeId = id;
+            appState.multiSelectedIds.clear();
+            updateObjectList();
+            drawCanvas();
+        }
+
+        function toggleMultiSelect(e, id) {
+            if (e) e.stopPropagation();
+            if (appState.multiSelectedIds.has(id)) {
+                appState.multiSelectedIds.delete(id);
+            } else {
+                appState.multiSelectedIds.add(id);
+            }
+            updateObjectList();
+            drawCanvas();
+        }
+
+        function groupSelectedBoxes() {
+            saveState();
+            if (appState.multiSelectedIds.size === 0 && appState.selectedShapeId) {
+                appState.multiSelectedIds.add(appState.selectedShapeId);
+            }
+            if (appState.multiSelectedIds.size === 0) return;
+
+            const autoGroupName = `Group ${appState.groupCounter++}`;
+            const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+            shapes.forEach(s => { if (appState.multiSelectedIds.has(s.id)) s.groupId = autoGroupName; });
+
+            appState.multiSelectedIds.clear();
+            updateObjectList();
+            drawCanvas();
+        }
+
+        function deleteSelectedShape() {
+            const shapes = appState.shapesMap[appState.currentImageIndex] || [];
+            if (!appState.selectedShapeId && appState.multiSelectedIds.size === 0) return;
+            
+            saveState();
+            if (appState.multiSelectedIds.size > 0) {
+                appState.shapesMap[appState.currentImageIndex] = shapes.filter(s => !appState.multiSelectedIds.has(s.id));
+                appState.multiSelectedIds.clear();
+            } else if (appState.selectedShapeId) {
+                appState.shapesMap[appState.currentImageIndex] = shapes.filter(s => s.id !== appState.selectedShapeId);
+            }
+
+            appState.selectedShapeId = null;
+            closeContextMenu();
+            updateObjectList();
+            updateBoxCounter();
+            drawCanvas();
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+            if (e.key.toLowerCase() === 'x') setTool(appState.currentTool === 'box' ? 'pan' : 'box');
+            if (e.key.toLowerCase() === 'm') setTool('pan');
+            if (e.key.toLowerCase() === 'g') groupSelectedBoxes();
+            if (e.key === 'Delete' || e.key === 'Backspace') deleteSelectedShape();
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoAction(); }
+        });
+
+        renderLabelBuilder();
+
+        // --- MOUSE WHEEL SCROLL ZOOMING ---
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+
+            const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+            const newScale = appState.scale * zoomFactor;
+            if (newScale < 0.1 || newScale > 20) return;
+
+            const mousePos = screenToImageCoords(e.clientX, e.clientY);
+            appState.scale = newScale;
+
+            const newMousePos = screenToImageCoords(e.clientX, e.clientY);
+            appState.panX += (newMousePos.x - mousePos.x) * appState.scale;
+            appState.panY += (newMousePos.y - mousePos.y) * appState.scale;
+
+            drawCanvas();
+        }, { passive: false });
+    </script>
+</body>
+</html>
